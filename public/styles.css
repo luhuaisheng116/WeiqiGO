@@ -1,9 +1,6 @@
 :root {
   --bg: #f3ecdd;
   --panel: rgba(255, 249, 237, 0.84);
-  --line: #6c4a2d;
-  --board: #d7ab62;
-  --board-dark: #be8c47;
   --text: #2a1c12;
   --muted: #6d5645;
   --accent: #a64b2a;
@@ -152,111 +149,52 @@ h1 {
 }
 
 .board {
-  --board-padding: clamp(22px, 4%, 32px);
-  --grid-step: calc((100% - (var(--board-padding) * 2)) / var(--grid-count));
-  position: relative;
   width: min(78vw, 700px);
   aspect-ratio: 1;
-  background:
-    linear-gradient(135deg, rgba(255, 248, 230, 0.22), transparent 40%),
-    linear-gradient(135deg, var(--board), var(--board-dark));
   border-radius: 24px;
+  overflow: hidden;
   box-shadow:
     inset 0 0 0 1px rgba(125, 86, 51, 0.24),
     0 24px 38px rgba(88, 56, 29, 0.18);
 }
 
-.board::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background:
-    repeating-linear-gradient(
-      to right,
-      transparent 0,
-      transparent calc(var(--board-padding) - 1px),
-      var(--line) calc(var(--board-padding) - 1px),
-      var(--line) calc(var(--board-padding) + 1px),
-      transparent calc(var(--board-padding) + 1px),
-      transparent calc(var(--board-padding) + var(--grid-step) - 1px),
-      var(--line) calc(var(--board-padding) + var(--grid-step) - 1px),
-      var(--line) calc(var(--board-padding) + var(--grid-step) + 1px)
-    ),
-    repeating-linear-gradient(
-      to bottom,
-      transparent 0,
-      transparent calc(var(--board-padding) - 1px),
-      var(--line) calc(var(--board-padding) - 1px),
-      var(--line) calc(var(--board-padding) + 1px),
-      transparent calc(var(--board-padding) + 1px),
-      transparent calc(var(--board-padding) + var(--grid-step) - 1px),
-      var(--line) calc(var(--board-padding) + var(--grid-step) - 1px),
-      var(--line) calc(var(--board-padding) + var(--grid-step) + 1px)
-    );
-  clip-path: inset(var(--board-padding) round 0);
-  opacity: 0.7;
+.board-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
-.cell {
-  position: absolute;
-  top: calc(var(--board-padding) + (var(--y) * var(--grid-step)));
-  left: calc(var(--board-padding) + (var(--x) * var(--grid-step)));
-  width: var(--grid-step);
-  height: var(--grid-step);
-  border: 0;
-  padding: 0;
-  background: transparent;
-  cursor: pointer;
-  transform: translate(-50%, -50%);
-}
-
-.cell:hover {
-  background: radial-gradient(circle, rgba(255, 248, 232, 0.24) 0%, transparent 58%);
-  border-radius: 50%;
+.grid-line {
+  stroke: #6c4a2d;
+  stroke-width: 3;
+  stroke-linecap: square;
+  opacity: 0.72;
 }
 
 .star-point-dot {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #3f2a17;
-  transform: translate(-50%, -50%);
+  fill: #3f2a17;
 }
 
 .stone {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 74%;
-  height: 74%;
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-  box-shadow: inset 0 2px 6px rgba(255, 255, 255, 0.22), 0 6px 12px rgba(0, 0, 0, 0.22);
-  z-index: 2;
+  stroke: rgba(0, 0, 0, 0.12);
+  stroke-width: 2;
 }
 
-.stone.black {
-  background: radial-gradient(circle at 30% 28%, #57514c 0%, #1c1917 68%);
+.last-move-dot {
+  fill: #e0502d;
 }
 
-.stone.white {
-  background: radial-gradient(circle at 30% 28%, #ffffff 0%, #f0e8dc 68%);
+.hit-area {
+  fill: transparent;
+  cursor: pointer;
 }
 
-.last-move .stone::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 20%;
-  height: 20%;
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-  background: #e0502d;
+.hit-area:hover {
+  fill: rgba(255, 248, 232, 0.18);
+}
+
+.hit-area.disabled {
+  pointer-events: none;
 }
 
 @media (max-width: 900px) {
