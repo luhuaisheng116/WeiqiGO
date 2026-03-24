@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>围棋双人联机 MVP</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="panel intro">
+        <p class="eyebrow">Web Go MVP</p>
+        <h1>网页围棋双人联机</h1>
+        <p class="subtitle">
+          输入同一个房间号，两个人就能开始对弈。默认 9 路棋盘，支持实时同步、轮流落子和基础提子。
+        </p>
+
+        <form id="join-form" class="join-form">
+          <label for="room-input">房间号</label>
+          <div class="join-row">
+            <input
+              id="room-input"
+              name="roomId"
+              maxlength="24"
+              placeholder="例如 demo-room"
+              autocomplete="off"
+            />
+            <button type="submit">进入房间</button>
+          </div>
+        </form>
+
+        <div class="status-grid">
+          <div class="status-card">
+            <span>当前房间</span>
+            <strong id="room-label">未加入</strong>
+          </div>
+          <div class="status-card">
+            <span>你的身份</span>
+            <strong id="role-label">未分配</strong>
+          </div>
+          <div class="status-card">
+            <span>当前回合</span>
+            <strong id="turn-label">黑方</strong>
+          </div>
+          <div class="status-card">
+            <span>房间人数</span>
+            <strong id="players-label">0 / 2</strong>
+          </div>
+        </div>
+
+        <div class="notice">
+          <p id="message-label">请先加入一个房间。</p>
+          <p id="last-move-label">最近一步：暂无</p>
+        </div>
+      </section>
+
+      <section class="panel board-panel">
+        <div id="board" class="board" aria-label="Go board"></div>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
