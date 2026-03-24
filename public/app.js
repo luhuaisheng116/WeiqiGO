@@ -33,6 +33,19 @@ function roleText(role) {
   return "旁观";
 }
 
+function isStarPoint(x, y) {
+  if (BOARD_SIZE !== 9) {
+    return false;
+  }
+  return (
+    (x === 2 && y === 2) ||
+    (x === 2 && y === 6) ||
+    (x === 6 && y === 2) ||
+    (x === 6 && y === 6) ||
+    (x === 4 && y === 4)
+  );
+}
+
 function renderBoard() {
   elements.board.innerHTML = "";
   elements.board.style.setProperty("--board-size", BOARD_SIZE);
@@ -45,6 +58,17 @@ function renderBoard() {
       button.dataset.x = String(x);
       button.dataset.y = String(y);
       button.disabled = !state.roomId;
+
+      if (x === 0) button.classList.add("edge-left");
+      if (x === BOARD_SIZE - 1) button.classList.add("edge-right");
+      if (y === 0) button.classList.add("edge-top");
+      if (y === BOARD_SIZE - 1) button.classList.add("edge-bottom");
+      if (isStarPoint(x, y)) {
+        button.classList.add("star-point");
+        const starPointDot = document.createElement("span");
+        starPointDot.className = "star-point-dot";
+        button.appendChild(starPointDot);
+      }
 
       const stone = state.board[y][x];
       if (stone) {
@@ -65,6 +89,7 @@ function renderBoard() {
       button.addEventListener("click", () => {
         socket.send(JSON.stringify({ type: "move", x, y }));
       });
+
       elements.board.appendChild(button);
     }
   }
@@ -110,6 +135,7 @@ socket.addEventListener("open", () => {
 
 socket.addEventListener("message", (event) => {
   const payload = JSON.parse(event.data);
+
   if (payload.type === "state") {
     updateState(payload);
     return;
