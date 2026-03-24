@@ -8,54 +8,69 @@
   </head>
   <body>
     <main class="app-shell">
-      <section class="panel intro">
-        <p class="eyebrow">Web Go MVP</p>
-        <h1>网页围棋双人联机</h1>
-        <p class="subtitle">
-          输入同一个房间号，两个人就能开始对弈。默认 9 路棋盘，支持实时同步、轮流落子和基础提子。
-        </p>
-
-        <form id="join-form" class="join-form">
-          <label for="room-input">房间号</label>
-          <div class="join-row">
-            <input
-              id="room-input"
-              name="roomId"
-              maxlength="24"
-              placeholder="例如 demo-room"
-              autocomplete="off"
-            />
-            <button type="submit">进入房间</button>
-          </div>
-        </form>
-
-        <div class="status-grid">
-          <div class="status-card">
-            <span>当前房间</span>
-            <strong id="room-label">未加入</strong>
-          </div>
-          <div class="status-card">
-            <span>你的身份</span>
-            <strong id="role-label">未分配</strong>
-          </div>
-          <div class="status-card">
-            <span>当前回合</span>
-            <strong id="turn-label">黑方</strong>
-          </div>
-          <div class="status-card">
-            <span>房间人数</span>
-            <strong id="players-label">0 / 2</strong>
-          </div>
-        </div>
-
-        <div class="notice">
-          <p id="message-label">请先加入一个房间。</p>
-          <p id="last-move-label">最近一步：暂无</p>
-        </div>
-      </section>
-
-      <section class="panel board-panel">
+      <section class="board-stage">
         <div id="board" class="board" aria-label="Go board"></div>
+
+        <div class="board-overlay top-overlay">
+          <div class="overlay-card hero-card">
+            <p class="eyebrow">Web Go MVP</p>
+            <h1>网页围棋双人联机</h1>
+            <p class="subtitle">
+              棋盘在底层，对局信息与操作浮在上层。输入同一个房间号，两个人就能开始。
+            </p>
+          </div>
+
+          <div class="overlay-card join-card">
+            <form id="join-form" class="join-form">
+              <label for="room-input">房间号</label>
+              <div class="join-row">
+                <input
+                  id="room-input"
+                  name="roomId"
+                  maxlength="24"
+                  placeholder="例如 demo-room"
+                  autocomplete="off"
+                />
+                <button type="submit">进入房间</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div class="board-overlay side-overlay">
+          <div class="overlay-card status-card">
+            <div class="status-grid">
+              <div><span>当前房间</span><strong id="room-label">未加入</strong></div>
+              <div><span>你的执子</span><strong id="role-label">旁观</strong></div>
+              <div><span>房间状态</span><strong id="status-label">等待加入</strong></div>
+              <div><span>当前回合</span><strong id="turn-label">黑方</strong></div>
+              <div><span>房间人数</span><strong id="players-label">0 / 2</strong></div>
+              <div><span>总手数</span><strong id="move-count-label">0</strong></div>
+            </div>
+          </div>
+
+          <div class="overlay-card score-card">
+            <div class="score-row"><span>黑方提子</span><strong id="black-captures-label">0</strong></div>
+            <div class="score-row"><span>白方提子</span><strong id="white-captures-label">0</strong></div>
+            <div class="score-row"><span>连续停一手</span><strong id="pass-count-label">0</strong></div>
+          </div>
+
+          <div class="overlay-card notice-card">
+            <p id="message-label">请先加入一个房间。</p>
+            <p id="last-move-label">最近一步：暂无</p>
+            <p id="undo-label">悔棋状态：暂无</p>
+          </div>
+        </div>
+
+        <div class="board-overlay bottom-overlay">
+          <div class="overlay-card controls-card">
+            <button id="pass-button" type="button">跳过一手</button>
+            <button id="undo-button" type="button">悔棋申请</button>
+            <button id="undo-response-button" type="button" hidden>同意悔棋</button>
+            <button id="undo-reject-button" type="button" hidden>拒绝悔棋</button>
+            <button id="resign-button" type="button" class="danger">认输</button>
+          </div>
+        </div>
       </section>
     </main>
 

@@ -23,8 +23,32 @@ function createEmptyBoard() {
   );
 }
 
-function createRoom(roomId) {
+function createSnapshot(room) {
   return {
+    board: room.board.map((row) => [...row]),
+    currentTurn: room.currentTurn,
+    lastMove: room.lastMove ? { ...room.lastMove } : null,
+    moveCount: room.moveCount,
+    captures: { ...room.captures },
+    consecutivePasses: room.consecutivePasses,
+    gameStatus: room.gameStatus,
+    winner: room.winner,
+  };
+}
+
+function restoreSnapshot(room, snapshot) {
+  room.board = snapshot.board.map((row) => [...row]);
+  room.currentTurn = snapshot.currentTurn;
+  room.lastMove = snapshot.lastMove ? { ...snapshot.lastMove } : null;
+  room.moveCount = snapshot.moveCount;
+  room.captures = { ...snapshot.captures };
+  room.consecutivePasses = snapshot.consecutivePasses;
+  room.gameStatus = snapshot.gameStatus;
+  room.winner = snapshot.winner;
+}
+
+function createRoom(roomId) {
+  const room = {
     id: roomId,
     board: createEmptyBoard(),
     currentTurn: "black",
@@ -35,7 +59,15 @@ function createRoom(roomId) {
     },
     lastMove: null,
     moveCount: 0,
+    captures: { black: 0, white: 0 },
+    consecutivePasses: 0,
+    gameStatus: "waiting",
+    winner: null,
+    pendingUndo: null,
+    history: [],
   };
+  room.history.push(createSnapshot(room));
+  return room;
 }
 
 function ensureRoom(roomId) {
@@ -125,30 +157,43 @@ function applyMove(board, x, y, color) {
 }
 
 function getRoleForSocket(room, socket) {
-  if (room.players.black === socket) {
-    return "black";
-  }
-  if (room.players.white === socket) {
-    return "white";
-  }
+  if (room.players.black === socket) return "black";
+  if (room.players.white === socket) return "white";
   return "viewer";
 }
 
-function createRoomState(room, socket, message = "") {
-  const role = getRoleForSocket(room, socket);
-  const readyPlayers = Object.values(room.players).filter(Boolean).length;
+function getOpponentRole(role) {
+  if (role === "black") return "white";
+  if (role === "white") return "black";
+  return null;
+}
 
+function getReadyPlayerCount(room) {
+  return Object.values(room.players).filter(Boolean).length;
+}
+
+function syncRoomStatus(room) {
+  if (room.gameStatus === "finished") return;
+  room.gameStatus = getReadyPlayerCount(room) < 2 ? "waiting" : "playing";
+}
+
+function createRoomState(room, socket, message = "") {
   return {
     type: "state",
     roomId: room.id,
     board: room.board,
-    yourRole: role,
+    yourRole: getRoleForSocket(room, socket),
     currentTurn: room.currentTurn,
-    readyPlayers,
-    isRoomFull: readyPlayers >= 2,
+    readyPlayers: getReadyPlayerCount(room),
+    isRoomFull: getReadyPlayerCount(room) >= 2,
     moveCount: room.moveCount,
     lastMove: room.lastMove,
     message,
+    captures: room.captures,
+    consecutivePasses: room.consecutivePasses,
+    gameStatus: room.gameStatus,
+    winner: room.winner,
+    pendingUndo: room.pendingUndo,
   };
 }
 
@@ -158,6 +203,18 @@ function broadcastRoom(room, message = "") {
       client.send(JSON.stringify(createRoomState(room, client, message)));
     }
   }
+}
+
+function sendError(socket, message) {
+  socket.send(JSON.stringify({ type: "error", message }));
+}
+
+function clearPendingUndo(room) {
+  room.pendingUndo = null;
+}
+
+function pushHistory(room) {
+  room.history.push(createSnapshot(room));
 }
 
 function assignSeat(room, socket) {
@@ -175,6 +232,8 @@ function assignSeat(room, socket) {
 function releaseSeat(socket) {
   for (const room of rooms.values()) {
     let changed = false;
+    const role = getRoleForSocket(room, socket);
+
     room.clients.delete(socket);
     if (room.players.black === socket) {
       room.players.black = null;
@@ -184,11 +243,19 @@ function releaseSeat(socket) {
       room.players.white = null;
       changed = true;
     }
+    if (room.pendingUndo && room.pendingUndo.requestedBy === role) {
+      clearPendingUndo(room);
+      changed = true;
+    }
+
+    if (room.gameStatus !== "finished") {
+      syncRoomStatus(room);
+      room.winner = null;
+    }
 
     if (changed) {
       broadcastRoom(room, "有玩家离开了房间。");
     }
-
     if (room.clients.size === 0) {
       rooms.delete(room.id);
     }
@@ -212,9 +279,25 @@ function serveFile(filePath, res) {
 
     res.writeHead(200, {
       "Content-Type": contentTypes[ext] || "application/octet-stream",
+      "Cache-Control": "no-cache",
     });
     res.end(data);
   });
+}
+
+function validatePlayerAction(room, socket) {
+  if (!socket.roomId) return "请先加入房间。";
+  const role = getRoleForSocket(room, socket);
+  if (role !== "black" && role !== "white") {
+    return "只有房间内两位玩家可以进行对局操作。";
+  }
+  if (getReadyPlayerCount(room) < 2) {
+    return "请等待两位玩家都进入房间后再开始。";
+  }
+  if (room.gameStatus === "finished") {
+    return "本局已结束。";
+  }
+  return null;
 }
 
 const server = http.createServer((req, res) => {
@@ -245,14 +328,12 @@ wss.on("connection", (socket) => {
     try {
       payload = JSON.parse(raw.toString());
     } catch {
-      socket.send(JSON.stringify({ type: "error", message: "消息格式无效。" }));
+      sendError(socket, "消息格式无效。");
       return;
     }
 
     if (payload.type === "join") {
-      if (socket.roomId) {
-        releaseSeat(socket);
-      }
+      if (socket.roomId) releaseSeat(socket);
 
       const roomId =
         typeof payload.roomId === "string" && payload.roomId.trim()
@@ -262,67 +343,163 @@ wss.on("connection", (socket) => {
       const room = ensureRoom(roomId);
       room.clients.add(socket);
       socket.roomId = roomId;
-      socket.playerRole = assignSeat(room, socket);
+      assignSeat(room, socket);
+      syncRoomStatus(room);
       socket.send(JSON.stringify(createRoomState(room, socket)));
       broadcastRoom(room, "房间状态已更新。");
       return;
     }
 
+    if (!socket.roomId) {
+      sendError(socket, "请先加入房间。");
+      return;
+    }
+
+    const room = rooms.get(socket.roomId);
+    if (!room) {
+      sendError(socket, "房间不存在。");
+      return;
+    }
+
+    const role = getRoleForSocket(room, socket);
+    const opponentRole = getOpponentRole(role);
+
     if (payload.type === "move") {
-      if (!socket.roomId || typeof payload.x !== "number" || typeof payload.y !== "number") {
-        socket.send(JSON.stringify({ type: "error", message: "落子参数无效。" }));
+      if (typeof payload.x !== "number" || typeof payload.y !== "number") {
+        sendError(socket, "落子参数无效。");
         return;
       }
-
-      const room = rooms.get(socket.roomId);
-      if (!room) {
-        socket.send(JSON.stringify({ type: "error", message: "房间不存在。" }));
+      const validationError = validatePlayerAction(room, socket);
+      if (validationError) {
+        sendError(socket, validationError);
         return;
       }
-
-      const role = getRoleForSocket(room, socket);
-      if (role !== "black" && role !== "white") {
-        socket.send(JSON.stringify({ type: "error", message: "只有房间内两位玩家可以落子。" }));
-        return;
-      }
-
-      if (Object.values(room.players).filter(Boolean).length < 2) {
-        socket.send(JSON.stringify({ type: "error", message: "请等待两位玩家都进入房间后再开始。" }));
-        return;
-      }
-
       if (role !== room.currentTurn) {
-        socket.send(JSON.stringify({ type: "error", message: "还没轮到你。" }));
+        sendError(socket, "还没轮到你。");
         return;
       }
 
       const x = Math.trunc(payload.x);
       const y = Math.trunc(payload.y);
       if (x < 0 || x >= BOARD_SIZE || y < 0 || y >= BOARD_SIZE) {
-        socket.send(JSON.stringify({ type: "error", message: "坐标超出棋盘范围。" }));
+        sendError(socket, "坐标超出棋盘范围。");
         return;
       }
 
       const result = applyMove(room.board, x, y, role);
       if (!result.valid) {
-        socket.send(JSON.stringify({ type: "error", message: result.reason }));
+        sendError(socket, result.reason);
         return;
       }
 
+      clearPendingUndo(room);
       room.board = result.board;
-      room.currentTurn = role === "black" ? "white" : "black";
+      room.currentTurn = opponentRole;
       room.moveCount += 1;
-      room.lastMove = {
-        x,
-        y,
-        color: role,
-        captured: result.captured,
-      };
+      room.lastMove = { type: "move", x, y, color: role, captured: result.captured };
+      room.captures[role] += result.captured;
+      room.consecutivePasses = 0;
+      syncRoomStatus(room);
+      pushHistory(room);
+      broadcastRoom(room, result.captured > 0 ? `提子 ${result.captured} 颗。` : "落子成功。");
+      return;
+    }
 
+    if (payload.type === "pass") {
+      const validationError = validatePlayerAction(room, socket);
+      if (validationError) {
+        sendError(socket, validationError);
+        return;
+      }
+      if (role !== room.currentTurn) {
+        sendError(socket, "还没轮到你。");
+        return;
+      }
+
+      clearPendingUndo(room);
+      room.currentTurn = opponentRole;
+      room.moveCount += 1;
+      room.consecutivePasses += 1;
+      room.lastMove = { type: "pass", color: role, captured: 0 };
+      if (room.consecutivePasses >= 2) {
+        room.gameStatus = "finished";
+        room.winner = null;
+      } else {
+        syncRoomStatus(room);
+      }
+      pushHistory(room);
       broadcastRoom(
         room,
-        result.captured > 0 ? `提子 ${result.captured} 颗。` : "落子成功。",
+        room.gameStatus === "finished"
+          ? "双方连续停一手，本局结束。"
+          : `${role === "black" ? "黑方" : "白方"}选择停一手。`,
       );
+      return;
+    }
+
+    if (payload.type === "resign") {
+      const validationError = validatePlayerAction(room, socket);
+      if (validationError) {
+        sendError(socket, validationError);
+        return;
+      }
+
+      clearPendingUndo(room);
+      room.gameStatus = "finished";
+      room.winner = opponentRole;
+      room.lastMove = { type: "resign", color: role, captured: 0 };
+      pushHistory(room);
+      broadcastRoom(room, `${role === "black" ? "黑方" : "白方"}已认输。`);
+      return;
+    }
+
+    if (payload.type === "requestUndo") {
+      const validationError = validatePlayerAction(room, socket);
+      if (validationError) {
+        sendError(socket, validationError);
+        return;
+      }
+      if (room.moveCount === 0 || room.history.length <= 1) {
+        sendError(socket, "当前没有可悔的步骤。");
+        return;
+      }
+      if (room.pendingUndo) {
+        sendError(socket, "当前已有悔棋申请在等待回应。");
+        return;
+      }
+
+      room.pendingUndo = { requestedBy: role, target: opponentRole };
+      broadcastRoom(room, `${role === "black" ? "黑方" : "白方"}发起了悔棋申请。`);
+      return;
+    }
+
+    if (payload.type === "respondUndo") {
+      if (!room.pendingUndo) {
+        sendError(socket, "当前没有待处理的悔棋申请。");
+        return;
+      }
+      if (role !== room.pendingUndo.target) {
+        sendError(socket, "只有对方可以回应这次悔棋申请。");
+        return;
+      }
+
+      const accept = Boolean(payload.accept);
+      const requestedBy = room.pendingUndo.requestedBy;
+      clearPendingUndo(room);
+
+      if (!accept) {
+        broadcastRoom(room, "悔棋申请已被拒绝。");
+        return;
+      }
+
+      if (room.history.length <= 1) {
+        broadcastRoom(room, "没有可悔的步骤。");
+        return;
+      }
+
+      room.history.pop();
+      restoreSnapshot(room, room.history[room.history.length - 1]);
+      broadcastRoom(room, `${requestedBy === "black" ? "黑方" : "白方"}的悔棋申请已被同意。`);
     }
   });
 

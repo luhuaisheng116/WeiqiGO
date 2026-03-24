@@ -6,7 +6,6 @@ const GRID_SPAN = VIEWBOX_SIZE - BOARD_PADDING * 2;
 const STEP = GRID_SPAN / (BOARD_SIZE - 1);
 const STONE_RADIUS = STEP * 0.36;
 const HIT_RADIUS = STEP * 0.46;
-
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 const elements = {
@@ -14,11 +13,22 @@ const elements = {
   roomInput: document.querySelector("#room-input"),
   roomLabel: document.querySelector("#room-label"),
   roleLabel: document.querySelector("#role-label"),
+  statusLabel: document.querySelector("#status-label"),
   turnLabel: document.querySelector("#turn-label"),
   playersLabel: document.querySelector("#players-label"),
+  moveCountLabel: document.querySelector("#move-count-label"),
+  blackCapturesLabel: document.querySelector("#black-captures-label"),
+  whiteCapturesLabel: document.querySelector("#white-captures-label"),
+  passCountLabel: document.querySelector("#pass-count-label"),
   messageLabel: document.querySelector("#message-label"),
   lastMoveLabel: document.querySelector("#last-move-label"),
+  undoLabel: document.querySelector("#undo-label"),
   board: document.querySelector("#board"),
+  passButton: document.querySelector("#pass-button"),
+  undoButton: document.querySelector("#undo-button"),
+  undoResponseButton: document.querySelector("#undo-response-button"),
+  undoRejectButton: document.querySelector("#undo-reject-button"),
+  resignButton: document.querySelector("#resign-button"),
 };
 
 const state = {
@@ -30,6 +40,12 @@ const state = {
   ),
   readyPlayers: 0,
   lastMove: null,
+  moveCount: 0,
+  captures: { black: 0, white: 0 },
+  consecutivePasses: 0,
+  gameStatus: "waiting",
+  winner: null,
+  pendingUndo: null,
 };
 
 const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -39,6 +55,14 @@ function roleText(role) {
   if (role === "black") return "黑方";
   if (role === "white") return "白方";
   return "旁观";
+}
+
+function createSvgElement(tag, attrs = {}) {
+  const element = document.createElementNS(SVG_NS, tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    element.setAttribute(key, String(value));
+  }
+  return element;
 }
 
 function isStarPoint(x, y) {
@@ -56,12 +80,38 @@ function coord(index) {
   return BOARD_PADDING + index * STEP;
 }
 
-function createSvgElement(tag, attrs = {}) {
-  const element = document.createElementNS(SVG_NS, tag);
-  for (const [key, value] of Object.entries(attrs)) {
-    element.setAttribute(key, String(value));
+function isPlayerRole(role) {
+  return role === "black" || role === "white";
+}
+
+function isMyTurn() {
+  return state.yourRole === state.currentTurn;
+}
+
+function getStatusText() {
+  if (state.gameStatus === "finished") {
+    return state.winner ? `${roleText(state.winner)}胜` : "对局结束";
   }
-  return element;
+  if (state.readyPlayers < 2) return "等待对手";
+  return "对局进行中";
+}
+
+function getLastMoveText() {
+  if (!state.lastMove) return "最近一步：暂无";
+  if (state.lastMove.type === "pass") {
+    return `最近一步：${roleText(state.lastMove.color)}跳过一手`;
+  }
+  if (state.lastMove.type === "resign") {
+    return `最近一步：${roleText(state.lastMove.color)}认输`;
+  }
+  return `最近一步：${roleText(state.lastMove.color)} 落在 (${state.lastMove.x + 1}, ${state.lastMove.y + 1})${
+    state.lastMove.captured ? `，提子 ${state.lastMove.captured} 颗` : ""
+  }`;
+}
+
+function getUndoText() {
+  if (!state.pendingUndo) return "悔棋状态：暂无";
+  return `悔棋状态：${roleText(state.pendingUndo.requestedBy)}已发起悔棋申请`;
 }
 
 function renderBoard() {
@@ -74,7 +124,6 @@ function renderBoard() {
   });
 
   const defs = createSvgElement("defs");
-
   const woodGradient = createSvgElement("linearGradient", {
     id: "woodGradient",
     x1: "0%",
@@ -122,24 +171,12 @@ function renderBoard() {
 
   for (let i = 0; i < BOARD_SIZE; i += 1) {
     const p = coord(i);
-    svg.appendChild(
-      createSvgElement("line", {
-        x1: BOARD_PADDING,
-        y1: p,
-        x2: VIEWBOX_SIZE - BOARD_PADDING,
-        y2: p,
-        class: "grid-line",
-      }),
-    );
-    svg.appendChild(
-      createSvgElement("line", {
-        x1: p,
-        y1: BOARD_PADDING,
-        x2: p,
-        y2: VIEWBOX_SIZE - BOARD_PADDING,
-        class: "grid-line",
-      }),
-    );
+    svg.appendChild(createSvgElement("line", {
+      x1: BOARD_PADDING, y1: p, x2: VIEWBOX_SIZE - BOARD_PADDING, y2: p, class: "grid-line",
+    }));
+    svg.appendChild(createSvgElement("line", {
+      x1: p, y1: BOARD_PADDING, x2: p, y2: VIEWBOX_SIZE - BOARD_PADDING, class: "grid-line",
+    }));
   }
 
   for (let y = 0; y < BOARD_SIZE; y += 1) {
@@ -148,47 +185,31 @@ function renderBoard() {
       const cy = coord(y);
 
       if (isStarPoint(x, y)) {
-        svg.appendChild(
-          createSvgElement("circle", {
-            cx,
-            cy,
-            r: STEP * 0.08,
-            class: "star-point-dot",
-          }),
-        );
+        svg.appendChild(createSvgElement("circle", {
+          cx, cy, r: STEP * 0.08, class: "star-point-dot",
+        }));
       }
 
       const stone = state.board[y][x];
       if (stone) {
-        svg.appendChild(
-          createSvgElement("circle", {
-            cx,
-            cy,
-            r: STONE_RADIUS,
-            class: `stone ${stone}`,
-            fill: stone === "black" ? "url(#blackStone)" : "url(#whiteStone)",
-          }),
-        );
-
+        svg.appendChild(createSvgElement("circle", {
+          cx,
+          cy,
+          r: STONE_RADIUS,
+          class: "stone",
+          fill: stone === "black" ? "url(#blackStone)" : "url(#whiteStone)",
+        }));
         if (state.lastMove && state.lastMove.x === x && state.lastMove.y === y) {
-          svg.appendChild(
-            createSvgElement("circle", {
-              cx,
-              cy,
-              r: STEP * 0.09,
-              class: "last-move-dot",
-            }),
-          );
+          svg.appendChild(createSvgElement("circle", {
+            cx, cy, r: STEP * 0.09, class: "last-move-dot",
+          }));
         }
       }
 
       const hit = createSvgElement("circle", {
-        cx,
-        cy,
-        r: HIT_RADIUS,
-        class: "hit-area",
+        cx, cy, r: HIT_RADIUS, class: "hit-area",
       });
-      if (!state.roomId) {
+      if (!(state.gameStatus === "playing" && isPlayerRole(state.yourRole) && isMyTurn())) {
         hit.classList.add("disabled");
       }
       hit.addEventListener("click", () => {
@@ -201,16 +222,32 @@ function renderBoard() {
   elements.board.appendChild(svg);
 }
 
+function renderControls() {
+  const canOperate = isPlayerRole(state.yourRole) && state.readyPlayers === 2 && state.gameStatus !== "finished";
+  elements.passButton.disabled = !(canOperate && isMyTurn());
+  elements.resignButton.disabled = !canOperate;
+  elements.undoButton.disabled = !(canOperate && !state.pendingUndo && state.moveCount > 0);
+
+  const waitingMyResponse = state.pendingUndo && state.pendingUndo.target === state.yourRole;
+  elements.undoResponseButton.hidden = !waitingMyResponse;
+  elements.undoRejectButton.hidden = !waitingMyResponse;
+  elements.undoResponseButton.disabled = !waitingMyResponse;
+  elements.undoRejectButton.disabled = !waitingMyResponse;
+}
+
 function renderStatus() {
   elements.roomLabel.textContent = state.roomId || "未加入";
   elements.roleLabel.textContent = roleText(state.yourRole);
+  elements.statusLabel.textContent = getStatusText();
   elements.turnLabel.textContent = roleText(state.currentTurn);
   elements.playersLabel.textContent = `${state.readyPlayers} / 2`;
-  elements.lastMoveLabel.textContent = state.lastMove
-    ? `最近一步：${roleText(state.lastMove.color)} 落在 (${state.lastMove.x + 1}, ${state.lastMove.y + 1})${
-        state.lastMove.captured ? `，提子 ${state.lastMove.captured} 颗` : ""
-      }`
-    : "最近一步：暂无";
+  elements.moveCountLabel.textContent = String(state.moveCount);
+  elements.blackCapturesLabel.textContent = String(state.captures.black);
+  elements.whiteCapturesLabel.textContent = String(state.captures.white);
+  elements.passCountLabel.textContent = String(state.consecutivePasses);
+  elements.lastMoveLabel.textContent = getLastMoveText();
+  elements.undoLabel.textContent = getUndoText();
+  renderControls();
 }
 
 function updateState(next) {
@@ -220,6 +257,12 @@ function updateState(next) {
   state.board = next.board;
   state.readyPlayers = next.readyPlayers;
   state.lastMove = next.lastMove;
+  state.moveCount = next.moveCount;
+  state.captures = next.captures;
+  state.consecutivePasses = next.consecutivePasses;
+  state.gameStatus = next.gameStatus;
+  state.winner = next.winner;
+  state.pendingUndo = next.pendingUndo;
   elements.messageLabel.textContent = next.message || "房间已连接。";
   renderStatus();
   renderBoard();
@@ -227,8 +270,29 @@ function updateState(next) {
 
 elements.joinForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  const roomId = elements.roomInput.value.trim();
-  socket.send(JSON.stringify({ type: "join", roomId }));
+  socket.send(JSON.stringify({ type: "join", roomId: elements.roomInput.value.trim() }));
+});
+
+elements.passButton.addEventListener("click", () => {
+  socket.send(JSON.stringify({ type: "pass" }));
+});
+
+elements.undoButton.addEventListener("click", () => {
+  socket.send(JSON.stringify({ type: "requestUndo" }));
+});
+
+elements.undoResponseButton.addEventListener("click", () => {
+  socket.send(JSON.stringify({ type: "respondUndo", accept: true }));
+});
+
+elements.undoRejectButton.addEventListener("click", () => {
+  socket.send(JSON.stringify({ type: "respondUndo", accept: false }));
+});
+
+elements.resignButton.addEventListener("click", () => {
+  if (window.confirm("确认认输吗？")) {
+    socket.send(JSON.stringify({ type: "resign" }));
+  }
 });
 
 socket.addEventListener("open", () => {
@@ -245,7 +309,6 @@ socket.addEventListener("message", (event) => {
     updateState(payload);
     return;
   }
-
   if (payload.type === "error") {
     elements.messageLabel.textContent = payload.message;
   }
