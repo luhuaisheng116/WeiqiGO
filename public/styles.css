@@ -6,8 +6,6 @@
   --board-dark: #be8c47;
   --text: #2a1c12;
   --muted: #6d5645;
-  --black: #1f1b18;
-  --white: #f6f1e8;
   --accent: #a64b2a;
   --shadow: 0 20px 50px rgba(72, 39, 17, 0.16);
 }
@@ -154,13 +152,11 @@ h1 {
 }
 
 .board {
+  --board-padding: clamp(22px, 4%, 32px);
+  --grid-step: calc((100% - (var(--board-padding) * 2)) / var(--grid-count));
+  position: relative;
   width: min(78vw, 700px);
   aspect-ratio: 1;
-  padding: 30px;
-  display: grid;
-  grid-template-columns: repeat(var(--board-size), 1fr);
-  grid-template-rows: repeat(var(--board-size), 1fr);
-  gap: 0;
   background:
     linear-gradient(135deg, rgba(255, 248, 230, 0.22), transparent 40%),
     linear-gradient(135deg, var(--board), var(--board-dark));
@@ -170,62 +166,57 @@ h1 {
     0 24px 38px rgba(88, 56, 29, 0.18);
 }
 
+.board::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    repeating-linear-gradient(
+      to right,
+      transparent 0,
+      transparent calc(var(--board-padding) - 1px),
+      var(--line) calc(var(--board-padding) - 1px),
+      var(--line) calc(var(--board-padding) + 1px),
+      transparent calc(var(--board-padding) + 1px),
+      transparent calc(var(--board-padding) + var(--grid-step) - 1px),
+      var(--line) calc(var(--board-padding) + var(--grid-step) - 1px),
+      var(--line) calc(var(--board-padding) + var(--grid-step) + 1px)
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent calc(var(--board-padding) - 1px),
+      var(--line) calc(var(--board-padding) - 1px),
+      var(--line) calc(var(--board-padding) + 1px),
+      transparent calc(var(--board-padding) + 1px),
+      transparent calc(var(--board-padding) + var(--grid-step) - 1px),
+      var(--line) calc(var(--board-padding) + var(--grid-step) - 1px),
+      var(--line) calc(var(--board-padding) + var(--grid-step) + 1px)
+    );
+  clip-path: inset(var(--board-padding) round 0);
+  opacity: 0.7;
+}
+
 .cell {
-  position: relative;
+  position: absolute;
+  top: calc(var(--board-padding) + (var(--y) * var(--grid-step)));
+  left: calc(var(--board-padding) + (var(--x) * var(--grid-step)));
+  width: var(--grid-step);
+  height: var(--grid-step);
   border: 0;
   padding: 0;
   background: transparent;
   cursor: pointer;
-}
-
-.cell::before,
-.cell::after {
-  content: "";
-  position: absolute;
-  background: var(--line);
-}
-
-.cell::before {
-  left: 50%;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  transform: translateX(-50%);
-}
-
-.cell::after {
-  top: 50%;
-  left: 0;
-  right: 0;
-  height: 1px;
-  transform: translateY(-50%);
-}
-
-.cell.edge-top::before {
-  top: 50%;
-}
-
-.cell.edge-bottom::before {
-  bottom: 50%;
-}
-
-.cell.edge-left::after {
-  left: 50%;
-}
-
-.cell.edge-right::after {
-  right: 50%;
+  transform: translate(-50%, -50%);
 }
 
 .cell:hover {
-  background: radial-gradient(circle, rgba(255, 248, 232, 0.26) 0%, transparent 58%);
+  background: radial-gradient(circle, rgba(255, 248, 232, 0.24) 0%, transparent 58%);
+  border-radius: 50%;
 }
 
-.cell.star-point .star {
-  display: block;
-}
-
-.cell.star-point > .star-point-dot {
+.star-point-dot {
   position: absolute;
   top: 50%;
   left: 50%;

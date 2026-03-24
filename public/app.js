@@ -34,9 +34,7 @@ function roleText(role) {
 }
 
 function isStarPoint(x, y) {
-  if (BOARD_SIZE !== 9) {
-    return false;
-  }
+  if (BOARD_SIZE !== 9) return false;
   return (
     (x === 2 && y === 2) ||
     (x === 2 && y === 6) ||
@@ -48,7 +46,8 @@ function isStarPoint(x, y) {
 
 function renderBoard() {
   elements.board.innerHTML = "";
-  elements.board.style.setProperty("--board-size", BOARD_SIZE);
+  elements.board.style.setProperty("--board-size", String(BOARD_SIZE));
+  elements.board.style.setProperty("--grid-count", String(BOARD_SIZE - 1));
 
   for (let y = 0; y < BOARD_SIZE; y += 1) {
     for (let x = 0; x < BOARD_SIZE; x += 1) {
@@ -57,14 +56,11 @@ function renderBoard() {
       button.className = "cell";
       button.dataset.x = String(x);
       button.dataset.y = String(y);
+      button.style.setProperty("--x", String(x));
+      button.style.setProperty("--y", String(y));
       button.disabled = !state.roomId;
 
-      if (x === 0) button.classList.add("edge-left");
-      if (x === BOARD_SIZE - 1) button.classList.add("edge-right");
-      if (y === 0) button.classList.add("edge-top");
-      if (y === BOARD_SIZE - 1) button.classList.add("edge-bottom");
       if (isStarPoint(x, y)) {
-        button.classList.add("star-point");
         const starPointDot = document.createElement("span");
         starPointDot.className = "star-point-dot";
         button.appendChild(starPointDot);
@@ -135,7 +131,6 @@ socket.addEventListener("open", () => {
 
 socket.addEventListener("message", (event) => {
   const payload = JSON.parse(event.data);
-
   if (payload.type === "state") {
     updateState(payload);
     return;
